@@ -1,0 +1,457 @@
+
+; Gabriele_CSC330_NewSpaceInvaders.asm
+;
+;
+;
+; Created: 11/27/2018 8:17:00 AM
+; Author : Elisabetta Gabriele 
+; Gabriele_CSC330_final
+; Description: Simplified version of scpace invaders with blocks. I am able to communicate with the OLED screen, and transfer
+; information via both a button and potentiometer to create a game where one has to shoot all the aliens to win
+; winning then branches to an endgame screen.
+
+
+
+
+
+.def enemy_location = r24									; enemy location provides x values to create enemies
+.def enemy_list = r25										; enemy list contains allows for deletion of enemies
+
+.def workhorse	= r16										; workhorse for ADC	conversion		
+.def adc_value_low	= r21									; for ADC conversion
+.def adc_value_high	= r22									; for ADC conversion
+
+.def reg_workhorse = r20									; Defining register in library
+.def reg_SPI_data = r17										; Defining register in library
+.def x_location = r18										; Controls the X-coordinate on the screen
+.def y_location = r19										; Controls the Y-coordinate on the screen
+			
+ 
+.macro set_pointer											; setup macro
+ldi @0, low(@2<<1)
+ldi @1, high(@2<<1)
+.endmacro
+
+
+.cseg														; start code segment
+.org 0x0000
+rjmp setup
+.org 0x0100
+
+
+
+; setting up screen, pin, timer, and enemy_list
+setup:
+		
+		rcall			OLED_initialize						; init screen				
+		rcall			GFX_clear_array						; clear array
+		set_pointer XL, XH, pixel_array						; set pointer
+		rcall			OLED_refresh_screen					; write that (cleared screen) to screen
+
+		ldi				r17, 0b11111111						; set register high
+		out				DDRD, r17							; allows usage of PORTD
+		out				PORTD, r17							; set PORTD high
+
+
+		ldi				r23, 0b00000000						; Timer0, normal mode
+		out				TCCR0A, r23			
+				
+		ldi				r23, 0b00000101						; use a prescaler of 1024
+		out				TCCR0B, r23	
+		 
+		ser  enemy_list										; set all the bits in enemy_list
+		
+; loop subroutine reads from POT, starts conversion, draws Player, moves player, creates the enemies	
+loop:
+		
+		ldi				r20, 0b11000011 					; use workhorse to store values into ADMUX by:
+		ldi				workhorse, 0b01000010				; using ADC2 (MUX3 through MUX0)
+		sts				ADMUX, workhorse					; using the voltage ref of AVCC (REFS1 and REFS0)
+		sts				ADCSRA, r20
+  
+		set_pointer ZL, ZH, Char_023						; begin drawing shape but setting Z pointer
+		rcall			GFX_set_shape						; set shape
+		
+		rcall			read_sprite_position				; grab x_location from read_sprite_position
+		ldi				y_location, 63						; set y locaiton
+		rcall			GFX_set_array_pos					; set array position
+		rcall			GFX_draw_shape						; draw shape
+		set_pointer XL, XH, pixel_array						; set X pointer
+		rcall			OLED_refresh_screen					; write it to the screen
+		rcall			wait_t0_overflow					; use it to stop player from getting stuck
+		rcall			GFX_clear_array						; clearing here because elsewhere flashes white screen
+		
+	
+		;----------implementing ememylocation bitmask-------------------------------------------------------------------------
+	; draws the enemies
+	enemy_draw:
+				ldi				enemy_location, 120			; last block x value
+				mov				reg_workhorse, enemy_list	; put all on list into reg_workhorse
+				andi			reg_workhorse, 0b00000001	; only want to see 0th bit
+				cpi				reg_workhorse, 0b00000001	; compare is the 0th one on, with the 0th one on
+				breq			make_0						; if its on still on then make the last block
+				rjmp			check1						; if not then continue and check out the next bit
+	make_0:
+				rcall			make						; calls make subroutine below which makes enemy blocks
+	check1:	
+				subi			enemy_location, 20			; subtract 20 from 120 to get next x location
+				mov				reg_workhorse, enemy_list	; put set list into reg_workhorse
+				andi			reg_workhorse, 0b00000010	; get 1st bit
+				cpi				reg_workhorse, 0b00000010	; compare to see if it's still on
+				breq			make_1						; if equal branch to make the 2nd right most block
+				rjmp			check2						; if not keep checking
+	make_1:
+				rcall			make						; calls make subroutine below which makes enemy blocks
+	check2:
+				subi			enemy_location, 20			; subtract 20 from 120 to get next x location
+				mov				reg_workhorse, enemy_list	; put set list into reg_workhorse
+				andi			reg_workhorse, 0b00000100	; get 2st bit
+				cpi				reg_workhorse, 0b00000100	; compare
+				breq			make_2						; make block
+				rjmp			check3						; keep going
+	make_2:
+				rcall			make
+	check3:
+				subi			enemy_location, 20			; same process as above
+				mov				reg_workhorse, enemy_list
+				andi			reg_workhorse, 0b00001000	; 3rd bit
+				cpi				reg_workhorse, 0b00001000	
+				breq			make_3
+				rjmp			check4
+	make_3:
+				rcall			make
+	check4:
+				subi			enemy_location, 20			; same process as above
+				mov				reg_workhorse, enemy_list
+				andi			reg_workhorse, 0b00010000	; 4th bit
+				cpi				reg_workhorse, 0b00010000	
+				breq			make_4
+				rjmp			check5
+	make_4:
+				rcall			make
+	check5:
+				subi			enemy_location, 20 
+				mov				reg_workhorse, enemy_list
+				andi			reg_workhorse, 0b00100000
+				cpi				reg_workhorse, 0b00100000	
+				breq			make_5
+				rjmp			check6
+	make_5:
+				rcall			make
+	check6:
+				subi			enemy_location, 20 
+				mov				reg_workhorse, enemy_list	
+				andi			reg_workhorse, 0b01000000
+				cpi				reg_workhorse, 0b01000000	
+				breq			make_6
+				rjmp			check7
+	make_6:
+				rcall			make
+	check7:
+				cpi				enemy_location, 0			; if we are at 0 then we know we are finished making enemies
+				breq			end
+				rjmp			checkButton
+		
+		;--------------------------------------------------------------------------------------------------------------------
+	; actually draws them							
+	make:				
+				set_pointer ZL, ZH, Char_219				; make the enemy ships with block
+				rcall			GFX_set_shape
+				set_pointer XL, XH, pixel_array
+				;rcall			GFX_set_shape
+				mov				x_location, enemy_location	; use enemy_location
+				ldi				y_location, 0 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+				ret
+			
+	end: 
+				cpi				enemy_list, 0b10000000		; if we killed all the enemies, then finale
+				breq			finale
+				rjmp			checkButton					; if not, proceed to check the button
+
+
+	; spells "YOU WIN" with a smileface and a heart
+	finale:
+				rcall			GFX_clear_array
+
+				set_pointer ZL, ZH, Char_089    
+				rcall			GFX_set_shape
+				ldi				x_location, 10
+				ldi				y_location, 20
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+
+				set_pointer ZL, ZH, Char_079
+				rcall			GFX_set_shape
+				ldi				x_location, 25
+				ldi				y_location, 20
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+
+				set_pointer ZL, ZH, Char_085
+				rcall			GFX_set_shape
+				ldi				x_location, 40
+				ldi				y_location, 20 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+	
+	
+				set_pointer ZL, ZH, Char_087
+				rcall			GFX_set_shape
+				ldi				x_location, 70
+				ldi				y_location, 45 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+		
+				set_pointer ZL, ZH, Char_073
+				rcall			GFX_set_shape
+				ldi				x_location, 85
+				ldi				y_location, 45 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+				set_pointer ZL, ZH, Char_078
+				rcall			GFX_set_shape
+				ldi				x_location, 100
+				ldi				y_location, 45 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+				set_pointer ZL, ZH, Char_001
+				rcall			GFX_set_shape
+				ldi				x_location, 25
+				ldi				y_location, 49 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+				set_pointer ZL, ZH, Char_003
+				rcall			GFX_set_shape
+				ldi				x_location, 35
+				ldi				y_location, 49 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+				rcall			OLED_refresh_screen		; end of the game
+
+				
+
+; checks to see if the button is being pressed
+checkButton:	
+				in				r17, PIND
+				;rcall delay_100ms
+				rcall			wait_t0_overflow		; use timer in overflow interrupt mode instead of delay
+				cpi				r17, 0xFE				; compare when button is not pressed vs when it is
+				breq			shoot					; if equal then go to shoot
+				rjmp			loop					; if not go back up to loop
+
+wait_t0_overflow:
+				in				r23, TIFR0				; TIMER0 in overflow interrupt mode			
+				andi			r23, 0b00000001			; Alternatively, TOV0 is cleared by writing a logic one to the flag			
+				breq			wait_t0_overflow					 
+																	
+				
+				cbr				r23, 0b00000000			; get out of it when it is overflowed
+				out				TIFR0, r23					
+				ret 									; return to where it was called in checkButton
+
+; sends a sequence of arrors as gun shots from the player
+shoot:
+				set_pointer ZL, ZH, Char_094
+				rcall			GFX_set_shape
+				rcall			read_sprite_position   
+				ldi				y_location, 40 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+
+				rcall			read_sprite_position   
+				ldi				y_location, 38 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+
+				rcall			read_sprite_position   
+				ldi				y_location, 36 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+	
+
+				rcall			read_sprite_position   
+				ldi				y_location, 34 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+
+				rcall			read_sprite_position   
+				ldi				y_location, 32 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+
+				rcall			read_sprite_position   
+				ldi				y_location, 30 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+
+				rcall			read_sprite_position   
+				ldi				y_location, 28 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+
+				rcall			read_sprite_position   
+				ldi				y_location, 26 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+
+				rcall			read_sprite_position   
+				ldi				y_location, 24 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+
+				rcall			read_sprite_position   
+				ldi				y_location, 22
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+		
+				rcall			read_sprite_position   
+				ldi				y_location, 20 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+
+
+				rcall			read_sprite_position   
+				ldi				y_location, 12 
+				rcall			GFX_set_array_pos
+				rcall			GFX_draw_shape
+				set_pointer XL, XH, pixel_array
+		
+;----------------------------------------------------------------------------------------------------
+															; if the button is hit and...
+				cpi				x_location, 118				; if we are in the range of the last block
+				brge			take						; branch
+				rjmp			checkTake					; if not keep checking what we are in range of 
+			take:
+				andi			enemy_list, 0b11111110		; turn off 7th bit so that it is not created in enememy portion of loop
+				rcall			enemy_draw					; go up and draw that now
+			checkTake:
+				cpi				x_location, 98				; if we are in range of the second to last block 
+				brge			take2						; branch
+				rjmp			checkTake2					; keep checking to see where we are when button is hit
+			take2:
+				andi			enemy_list, 0b11111101		; turn off 1st bit
+				rcall			enemy_draw					; go up and draw that 
+			checkTake2:
+				cpi				x_location, 78				; repeat process from above
+				brge			take3	
+				rjmp			checkTake3
+			take3:
+				andi			enemy_list, 0b11111011
+				rcall			enemy_draw
+			checkTake3:
+				cpi				x_location, 58
+				brge			take4	
+				rjmp			checkTake4
+			take4:
+				andi			enemy_list, 0b11110111
+				rcall			enemy_draw
+			checkTake4:
+				cpi				x_location, 38
+				brge			take5	
+				rjmp			checkTake5
+			take5:
+				andi			enemy_list, 0b11101111
+				rcall			enemy_draw
+			checkTake5:
+				cpi				x_location, 18
+				brge			take6	
+				rjmp			checkTake6
+			take6:
+				andi			enemy_list, 0b11011111
+				rcall			enemy_draw
+			checkTake6:
+				cpi				x_location, 0
+				breq			take7	
+				rjmp			checkTake8
+			take7:
+				andi			enemy_list, 0b10111111
+				rcall			enemy_draw
+
+			checkTake8:
+						
+				rjmp			checkButton
+
+	
+
+; x_location should be controlled by the potentiometer		
+; return the x_location	
+read_sprite_position:
+			
+	wait_adc:	
+		
+		lds			workhorse, ADCSRA			;	[1] loading into workhorse the value of ADCSRA
+		andi		workhorse, 0b00010000		;	[2] testing against the interrupt flag of ADCSRA (ADIF)
+		breq		wait_adc					;	this is using ADC in interrupt mode
+		
+
+	show:		
+						
+		lds			adc_value_low, 	ADCL		;	load the ADCed values into general purpose registers:
+		lds			adc_value_high, ADCH		;	[1] ADCL into adc_value_low
+
+		ror			adc_value_high	
+		ror			adc_value_low
+
+		ror			adc_value_high	
+		ror			adc_value_low
+
+		ror			adc_value_low
+		
+			
+		mov			x_location, adc_value_low	; mov to get x_location which is r18	
+														
+		ret										; return 
+
+
+				
+	
+	
+
+
+
+.include "lib_delay.asm"
+.include "lib_SSD1306_OLED.asm"
+.include "lib_GFX.asm"
+;.include "character_map.asm"   
+
+
+
+
